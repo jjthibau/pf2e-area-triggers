@@ -1,0 +1,9 @@
+# Retain the exact native-tested runtime bytes on every platform.
+/scripts/*.js -text
+/styles/*.css -text
+*.png binary
+*.md text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.yml text eol=lf

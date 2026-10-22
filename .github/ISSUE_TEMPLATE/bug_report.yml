@@ -1,0 +1,23 @@
+name: Bug report
+description: Report an incorrect or missing area prompt
+title: "[Bug] "
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Foundry, PF2e, and module versions
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Exact spell, creature, item, or hazard ability
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected prompt, and actual result
+      description: Include encounter state, area placement, movement/turn timing and other relevant modules. Do not include private campaign exports or credentials.
+    validations:
+      required: true

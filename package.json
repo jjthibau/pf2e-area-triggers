@@ -1,0 +1,12 @@
+{
+  "name": "pf2e-area-triggers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check scripts/main.js && node --check scripts/engine.js && node --check scripts/sources.js && node --check scripts/profiles.js && node --check scripts/catalog.js && node --check scripts/geometry.js",
+    "build": "python tools/build_release.py",
+    "test": "npm run check && node --test tests/contracts.test.mjs",
+    "check:release": "python tools/check_release.py"
+  }
+}

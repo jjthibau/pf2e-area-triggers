@@ -1,0 +1,22 @@
+# Only reviewed distribution and public project files are tracked.
+/*
+!/.gitignore
+!/.gitattributes
+!/module.json
+!/package.json
+!/README.md
+!/LICENSE
+!/CHANGELOG.md
+!/CONTRIBUTING.md
+!/SECURITY.md
+!/scripts/
+!/styles/
+!/tools/
+!/tests/
+!/.github/
+!/docs/
+/docs/*
+!/docs/architecture.md
+!/docs/testing.md
+!/docs/images/
+**/__pycache__/
