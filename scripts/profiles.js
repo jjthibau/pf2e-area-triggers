@@ -178,11 +178,11 @@ additions['vibrant-vibrato']={source:'tPtTKe0X1dDwoDmQ',events:['cast','enter','
 for(const [id,p] of Object.entries(additions))registerModes(id,{kind:'spell',basic:false,traits:[],duration:60,...p});
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const slug=i=>i?.slug??i?.system?.slug??(globalThis.game?.pf2e?.system?.sluggify?.(i?.name??'')??i?.name?.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''));
+const legacyCanonical={darklight:'Compendium.pf2e.spells-srd.Item.sFwoKj0TsacsmoWj','stinking-cloud':'Compendium.pf2e.spells-srd.Item.GKpEcy9WId6NJvtx','ripping-gaze':'Compendium.pf2e.kingmaker-bestiary.Actor.sw32QdZlsWnmWaVY',...Object.fromEntries(Object.entries(additions).map(([id,p])=>[id,'Compendium.pf2e.spells-srd.Item.'+p.source]))};
 function legacyProfileFor(item){
  const key=slug(item),p=profiles[key];if(!p)return null;
- const canonical={darklight:'Compendium.pf2e.spells-srd.Item.sFwoKj0TsacsmoWj','stinking-cloud':'Compendium.pf2e.spells-srd.Item.GKpEcy9WId6NJvtx','ripping-gaze':'Compendium.pf2e.kingmaker-bestiary.Actor.sw32QdZlsWnmWaVY',...Object.fromEntries(Object.entries(additions).map(([id,p])=>[id,'Compendium.pf2e.spells-srd.Item.'+p.source]))};
  const source=p.kind==='aura'?item.actor:item;
- if(![source?.sourceId,source?._stats?.compendiumSource].includes(canonical[key]))return null;
+ if(![source?.sourceId,source?._stats?.compendiumSource].includes(legacyCanonical[key]))return null;
  if(p.kind==='spell'&&!item.isOfType('spell'))return null;
  if(p.kind==='aura'&&!item.system.rules?.some(r=>r.key==='Aura'&&(r.slug??key)===key))return null;
  if(p.kind==='aura'&&!item.system.description.value.includes('@Damage[8d6[slashing]]'))return null;

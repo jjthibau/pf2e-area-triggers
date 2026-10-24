@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Reuse the fixed legacy spell-source lookup instead of rebuilding it during every matching item lookup.
+
 ## 0.1.0
 
 - Initial public release of native area and turn prompts.
