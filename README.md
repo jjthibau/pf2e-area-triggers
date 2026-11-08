@@ -16,7 +16,7 @@ Enable **PF2e Area Triggers** in your PF2e world. The **Enable area trigger prom
 
 ## Combat and GM control
 
-Automatic prompts require a started encounter in the current scene. Exploration movement and unstarted initiative stay silent, including movement through placed spell areas.
+Automatic prompts require a started encounter in the current scene. An explicitly linked encounter uses that scene. An unlinked encounter can resolve its scene from its token combatants when they all belong to one scene; empty, missing-scene and mixed-scene rosters remain silent rather than guessing. Exploration movement and unstarted initiative stay silent, including movement through placed spell areas.
 
 Traps and haunts become live when their source joins the started encounter, or when the GM chooses **Live during encounters** on the supported ability card. **Paused** prevents new prompts even when the hazard is in initiative. Explicit activation still does not bypass the combat requirement. Previously posted cards remain available for manual resolution.
 
@@ -50,7 +50,7 @@ Mark special environmental exposure in the Region's **Appearance ? Area counts a
 
 ## Content coverage
 
-The reviewed PF2e 8.6.0 inventory contains 388 aura families, 140 canonical spells and 133 other qualifying ability families. Definitions are authored individually; duplicate creature variants are not counted as separate mechanics. See [testing and compatibility](docs/testing.md) for the validation scope.
+The reviewed PF2e 8.6.0 inventory contains 388 aura families, 140 canonical spells and 133 other qualifying ability families. Definitions are authored individually; duplicate creature variants are not counted as separate mechanics. Reviewed legacy/remaster and adventure-import source aliases preserve native authored DCs and do not rewrite creature sheets. See [testing and compatibility](docs/testing.md) for the validation scope.
 
 Initial-only effects, target-bound recovery outside an area, passive benefits without an exposure trigger, and source-state reactions are not converted into recurring area saves. In particular, Poltergeist's Fury does not receive an invented repeat-damage trigger. New PF2e content and unsupported homebrew need reviewed definitions rather than automatic prose guesses.
 

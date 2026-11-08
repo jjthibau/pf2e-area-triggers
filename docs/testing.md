@@ -1,3 +1,9 @@
+## Unlinked encounters and imported identities (2026-11-08)
+
+Nine portable contracts pass, including single-scene inference, explicit-link precedence, inactive/unstarted guards, missing/mixed membership and five exact imported aura aliases with negative identity/rule guards. A fresh isolated Foundry 14.369 / PF2e 8.6.0 synthetic world passes seven focused native checks: original profiles load, unstarted silence, actual end-turn prompts in an unlinked encounter, linked parity, an imported aura retaining its authored DC, foreign-scene exclusion and mixed-scene exclusion. Zero browser errors. These checks cover this compatibility patch; they do not rerun the historical broad catalog suite.
+
+Two earlier fixture failures were preserved: an incomplete synthetic ability identity and a core-rejected attempt to link combatants to a scene that did not contain them. Fresh native fixtures use original public compendium identities and valid foreign-scene participants. No campaign data is included in the test distribution.
+
 # Testing and compatibility
 
 Tested with Foundry VTT 14.369 and PF2e 8.6.0 in an isolated synthetic world.

@@ -198,10 +198,18 @@ for(const [id,p] of Object.entries(catalogData)){
  catalogByItem.set(p.canonical,id);
  if(p.actorCanonical){const a=catalogByActor.get(p.actorCanonical)??new Map();a.set(p.embeddedId,id);catalogByActor.set(p.actorCanonical,a);}
 }
+// Reviewed legacy/remaster and adventure-import identities. No name/prose guessing.
+const importedAuraAliases=new Map([
+ ['Compendium.pf2e.pathfinder-bestiary-2.Actor.jCF9HjF42SPXTptP.Item.EYtHIPWgwGTdjCBp','Compendium.pf2e.pathfinder-monster-core-2.Actor.yaDZ0N6t8vOxbqLy.Item.EYtHIPWgwGTdjCBp'],
+ ['Compendium.pf2e.pathfinder-bestiary-2.Actor.qjAtPDIi7OyUGsNy.Item.Ai8J0A4OuhkDr7Cx','Compendium.pf2e.pathfinder-monster-core-2.Actor.oLfyxHNz8IX06ZcU.Item.Ai8J0A4OuhkDr7Cx'],
+ ['Compendium.pf2e.pathfinder-bestiary-2.Actor.zXZrUTQSI0WxAsF5.Item.H5H2qTd7RH9FnyiA','Compendium.pf2e.pathfinder-monster-core-2.Actor.GOQPbXk8HZDypZzd.Item.H5H2qTd7RH9FnyiA'],
+ ['Compendium.pf2e.strength-of-thousands-bestiary.Actor.gOiaU4B29galdmu2.Item.AGjtcz0cAWzBXlEx','Compendium.pf2e.pathfinder-monster-core.Actor.aeOzCBpwnUVcpqxI.Item.AGjtcz0cAWzBXlEx'],
+ ['Compendium.pf2e.strength-of-thousands-bestiary.Actor.zgd9SvS7CyWTHlBs.Item.V91wrEHb3gd1ahCH','Compendium.pf2e.pathfinder-monster-core.Actor.aeOzCBpwnUVcpqxI.Item.AGjtcz0cAWzBXlEx']
+]);
 export function profileFor(item){
  const legacy=legacyProfileFor(item);if(legacy)return legacy;
  const actor=item?.actor,actorSource=actor?.sourceId??actor?._stats?.compendiumSource;
- const id=catalogByActor.get(actorSource)?.get(item?.id)??catalogByItem.get(item?.sourceId)??catalogByItem.get(item?._stats?.compendiumSource);
+ const id=catalogByActor.get(actorSource)?.get(item?.id)??catalogByItem.get(item?.sourceId)??catalogByItem.get(item?._stats?.compendiumSource)??catalogByItem.get(importedAuraAliases.get(actorSource+'.Item.'+item?.id));
  const p=profiles[id];if(!p||!['area','environment'].includes(p.kind)&&!p.geometry&&!p.sharedAura&&!item.system.rules?.some(r=>r.key==='Aura'&&(r.slug??slug(item))===(p.auraSlug??slug(item))))return null;
  return {id,...p};
 }

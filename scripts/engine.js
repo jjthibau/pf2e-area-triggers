@@ -1,6 +1,6 @@
 import {ensureGeometry,setActive,movementProbe,eventContains} from './geometry.js';
 import {ID,profiles,profileFor,esc,multiplier} from './profiles.js';
-import {now,binding,enabled,gm,active,sourceOptions,sourceItem,sourceLabel,auraSources,bindRegion,nativeDamage,sourceActor,linkArea,synchronizeEnvironments,environmentSources,startedEncounter,sourceLive,setSourceLive,abilityMechanics} from './sources.js';
+import {now,binding,enabled,gm,active,sourceOptions,sourceItem,sourceLabel,auraSources,bindRegion,nativeDamage,sourceActor,linkArea,synchronizeEnvironments,environmentSources,startedEncounter,encounterInScene,sourceLive,setSourceLive,abilityMechanics} from './sources.js';
 const socket='module.'+ID,waiters=new Map(),rolling=new Set();let queue=Promise.resolve();
 const placementTargets=new Map();
 export function rememberPlacement(region){if(gm()&&enabled()&&canvas.ready&&region.parent===canvas.scene)placementTargets.set(region.uuid,region.parent.tokens.filter(t=>t.actor&&t.testInsideRegion(region)).map(t=>t.uuid));}
@@ -54,10 +54,10 @@ async function triggerOne(s,target,event,key,window={}){
  if(p.sourceOnly&&s.actorUUID!==target.actor.uuid)return null;
  if(p.affects){const source=sourceActor(s),self=source?.uuid===target.actor.uuid;if(p.affects==='allies'&&!(self?p.includeSelf:source?.isAllyOf(target.actor)))return null;if(p.affects==='enemies'&&(self||!source?.isEnemyOf(target.actor)))return null;}
  if(p.suppressWhenUnconscious&&fromUuidSync(s.actorUUID)?.hasCondition('unconscious'))return null;
- if(event==='enter'&&p.entryOwnTurn&&(!game.combat?.started||game.combat.scene?.id!==target.parent.id||!isTurnOf(target,game.combat.combatant)))return null;
+ if(event==='enter'&&p.entryOwnTurn&&(!encounterInScene(game.combat,target.parent)||!isTurnOf(target,game.combat.combatant)))return null;
  if(p.minSize!==undefined&&['tiny','sm','med','lg','huge','grg'].indexOf(target.actor.size)<p.minSize)return null;
  if(p.maxSize!==undefined&&['tiny','sm','med','lg','huge','grg'].indexOf(target.actor.size)>p.maxSize)return null;
- const encounter=window.encounter??game.combat,epoch=encounter?.started!==false&&encounter?.scene?.id===target.parent.id?encounter.id+':'+encounter.round+(p.frequency==='turn'?':'+(window.combatant?.id??encounter.combatant?.id):''):'time:'+Math.floor(now()/6);
+ const encounter=window.encounter??game.combat,epoch=encounterInScene(encounter,target.parent)?encounter.id+':'+encounter.round+(p.frequency==='turn'?':'+(window.combatant?.id??encounter.combatant?.id):''):'time:'+Math.floor(now()/6);
  if(p.frequency==='combat'&&!encounter?.started)return null;
  const windowKey=p.frequency==='cast'?'initial':p.frequency==='combat'?encounter.id:epoch,eventKey=p.frequency?(s.castKey??s.instance)+'|'+s.profile+'|'+identity(target)+'|'+p.frequency+'|'+windowKey:s.instance+'|'+s.profile+'|'+(target.flags.pf2e?.troop?identity(target):target.uuid)+'|'+event+'|'+key;
  if(p.frequency&&castRegions(s).some(r=>{const v=r.getFlag(ID,'ledger')?.[actorKey(identity(target),s)];return v?.window===windowKey&&(v.outcome||game.messages.has(v.requestId));}))return null;
@@ -70,7 +70,7 @@ async function triggerOne(s,target,event,key,window={}){
  return message;
 }
 export async function turn(combatant,encounter,event){
- if(!gm()||!canvas.ready||!enabled()||!startedEncounter(canvas.scene)||encounter.scene?.id!==canvas.scene.id)return;
+ if(!gm()||!canvas.ready||!enabled()||!encounterInScene(encounter,canvas.scene))return;
  if(event==='start'){await runScheduled(combatant,encounter,'start');for(const item of combatant.actor?.items??[]){const p=profileFor(item);if(p?.endOnSourceStart&&item.getFlag(ID,'active')?.enabled)await setActive(item.uuid,false);}}
  const key=encounter.id+':'+encounter.round+':'+combatant.id;
  const ownerEvent='source-'+event;
@@ -94,7 +94,7 @@ export async function enter(region,event){
  await trigger(s,t,timing,key);
 }
 export async function round(encounter){
- if(!gm()||!enabled()||!canvas.ready||encounter.scene?.id!==canvas.scene.id)return;
+ if(!gm()||!enabled()||!canvas.ready||!encounterInScene(encounter,canvas.scene))return;
  for(const region of canvas.scene.regions){const s=binding(region);if(!s||!profiles[s.profile].events.includes('round')||region.hidden||!region.behaviors.some(b=>b.type===ID+'.trigger'&&!b.disabled))continue;
   for(const token of canvas.scene.tokens)if(token.testInsideRegion(region))await trigger(s,token,'round',encounter.id+':'+encounter.round,{encounter});
  }
@@ -297,7 +297,7 @@ function pulseContains(region,token,p){
 }
 async function chosenPulse(p,regions,user,choices,targetUUIDs){
  if(!Array.isArray(choices)||!choices.length||choices.length>(p.pulseLimit??1)||new Set(choices).size!==choices.length||choices.some(id=>!p.pulseChoices.some(c=>c.id===id))){ui.notifications.warn('Choose the permitted number of different spell effects.');return;}
- const leader=regions[0],source=binding(leader),prior=leader.getFlag(ID,'pulseChoiceState'),combat=game.combat,window=combat?.started&&combat.scene?.id===canvas.scene.id?combat.id+':'+combat.round:'time:'+Math.floor(now()/6),initial=source.initialPulsePending&&(!source.castCombat||source.castCombat.id===combat?.id&&source.castCombat.round===combat.round);
+ const leader=regions[0],source=binding(leader),prior=leader.getFlag(ID,'pulseChoiceState'),combat=game.combat,window=encounterInScene(combat,canvas.scene)?combat.id+':'+combat.round:'time:'+Math.floor(now()/6),initial=source.initialPulsePending&&(!source.castCombat||source.castCombat.id===combat?.id&&source.castCombat.round===combat.round);
  if(p.pulseFrequency==='round'&&prior?.window===window&&!initial){ui.notifications.warn('This casting already used its first Sustain effect this round.');return;}
  if(p.noConsecutiveChoice&&choices.some(id=>prior?.choices?.includes(id))){ui.notifications.warn('Choose a different effect from the previous display.');return;}
  const selected=[...new Set(targetUUIDs??[])].map(uuid=>canvas.scene.tokens.find(t=>t.uuid===uuid)).filter(Boolean),plans=[];
@@ -352,7 +352,7 @@ export async function scheduleArea(regionUUID,combatantId,phase='end',delayRound
  const updates=region.behaviors.filter(b=>b.type===ID+'.trigger').map(b=>({_id:b.id,disabled:false}));if(updates.length)await region.updateEmbeddedDocuments('RegionBehavior',updates);
 }
 export async function runScheduled(combatant,encounter,event,round=encounter.round){
- if(!gm()||!enabled()||!canvas.ready||!startedEncounter(canvas.scene)||encounter.scene?.id!==canvas.scene.id)return;
+ if(!gm()||!enabled()||!canvas.ready||!encounterInScene(encounter,canvas.scene))return;
  for(const region of [...canvas.scene.regions]){
   const s=binding(region),clock=s?.clockDeadline,p=profiles[s?.profile];if(!clock||s.clockFired||clock.combatId!==encounter.id||clock.combatantId!==combatant.id||clock.phase!==event||clock.round>round||region.hidden||!sourceLive(s,region.parent)||!region.behaviors.some(b=>b.type===ID+'.trigger'&&!b.disabled))continue;
   if(p.clockActivateOnly){await region.update({[`flags.${ID}.binding.clockDeadline`]:null,[`flags.${ID}.binding.clockActive`]:true});continue;}
