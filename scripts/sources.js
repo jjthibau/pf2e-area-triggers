@@ -82,9 +82,10 @@ export async function bindRegion(region){
  const s={...mechanics,kind:'region',itemType:item.type,profile:p.id,instance:region.uuid,castKey:region.message?.uuid??region.uuid,name:item.name+(p.modeLabel?': '+p.modeLabel:''),actorUUID:item.actor.uuid,itemUUID:ruleItem.uuid,controlItemUUID:origin.uuid,messageId:region.message?.id??null,rank,dc,traits:[...new Set([...ruleItem.traits,...p.traits])],options:[...(p.options??[]),...(p.basic||p.damageSave||p.directDamage||p.independentDamage?['damaging-effect']:[])],snapshot,createdAt:now(),expiresAt,...(p.durationRoll?{durationRolled:duration,durationRollId}:{})};
  if(p.initialSweep)s.initialSweepPending=true;
  if(p.initialPulse)s.initialPulsePending=true;
- if(p.events.includes('sustain')&&encounterInScene(game.combat,region.parent))s.castCombat={id:game.combat.id,round:game.combat.round,turn:game.combat.turn};
+ const encounter=startedEncounter(region.parent);
+ if(p.events.includes('sustain')&&encounter)s.castCombat={id:encounter.id,round:encounter.round,turn:encounter.turn};
  if(p.kind==='spell'&&p.checkChoices)s.checkChoices=p.checkChoices.map(c=>({save:c.save,label:c.label,options:c.options??[],dc}));
- if(p.expireOnSourceEnd&&encounterInScene(game.combat,region.parent))s.sourceEndExpiry={combatId:game.combat.id,round:game.combat.round+(game.combat.combatant?.actor?.uuid===s.actorUUID?1:0)};
+ if(p.expireOnSourceEnd&&encounter)s.sourceEndExpiry={combatId:encounter.id,round:encounter.round+(encounter.combatant?.actor?.uuid===s.actorUUID?1:0)};
  if(p.clockSourcePhase){const combat=startedEncounter(region.parent),owner=combat?.turns.findIndex(c=>c.actor?.uuid===s.actorUUID)??-1;if(owner>=0){const phase=p.clockSourcePhase;s.clockDeadline={id:foundry.utils.randomID(),combatId:combat.id,combatantId:combat.turns[owner].id,phase,round:combat.round+(phase==='start'?owner<=combat.turn:owner<combat.turn)+(p.clockDelayRounds??1)-1};}}
  if(p.followCaster){const spoken=region.message?.speaker?.token,matching=region.parent.tokens.filter(t=>t.actor?.uuid===item.actor.uuid),token=region.parent.tokens.get(spoken)??(matching.length===1?matching[0]:null);if(token)s.follow={tokenUUID:token.uuid,x:token.x,y:token.y,elevation:token.elevation};}
  await region.setFlag(ID,'binding',s);

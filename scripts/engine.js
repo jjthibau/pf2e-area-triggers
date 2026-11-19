@@ -7,6 +7,30 @@ export function rememberPlacement(region){if(gm()&&enabled()&&canvas.ready&&regi
 export const enqueue=fn=>{const task=queue.then(fn);queue=task.catch(e=>console.error(ID,e));return task;};
 export const idle=()=>queue;
 const req=m=>m?.getFlag(ID,'request');
+let indexedMessages;
+const indexedRequests=new Map(),requestKeys=new Map(),rollingRequests=new Set();
+function removeIndexedRequest(message){
+ const id=message.id,key=indexedRequests.get(id);
+ const ids=requestKeys.get(key);
+ if(ids){ids.delete(id);if(!ids.size)requestKeys.delete(key);}
+ indexedRequests.delete(id);rollingRequests.delete(id);
+}
+function recordIndexedRequest(message){
+ removeIndexedRequest(message);
+ const request=req(message);
+ if(!request?.key)return;
+ const ids=requestKeys.get(request.key)??new Set();
+ ids.add(message.id);requestKeys.set(request.key,ids);indexedRequests.set(message.id,request.key);
+ if(request.status==='rolling')rollingRequests.add(message.id);
+}
+export function indexRequests(){
+ if(indexedMessages===game.messages)return;
+ indexedMessages=game.messages;indexedRequests.clear();requestKeys.clear();rollingRequests.clear();
+ for(const message of indexedMessages)recordIndexedRequest(message);
+}
+export function indexRequestChange(message){indexRequests();recordIndexedRequest(message);}
+export function indexRequestDeletion(message){indexRequests();removeIndexedRequest(message);}
+export function hasAreaRequest(key){indexRequests();return requestKeys.has(key);}
 const castRegions=s=>s.kind==='aura'?[canvas.scene.tokens.get(s.tokenUUID.split('.').at(-1))].filter(Boolean):canvas.scene.regions.filter(r=>{const b=binding(r);return b&&(b.castKey??b.instance)===(s.castKey??s.instance);});
 const identity=target=>target.flags.pf2e?.troop?target.parent.uuid+'.Troop.'+target.flags.pf2e.troop.id:target.actor.uuid;
 const isTurnOf=(t,c)=>c?.actor?.uuid===t.actor.uuid||t.flags.pf2e?.troop?.id&&t.flags.pf2e.troop.id===c?.flags.pf2e?.troop;
@@ -28,7 +52,7 @@ export function renderCard(r){
  return `<div class="pf2e chat-card area-trigger-card"><header><h3>${p.gmDecision&&!r.approved?esc((r.source.tokenUUID?fromUuidSync(r.source.tokenUUID)?.name:null)??sourceActor(r.source)?.name??'Source')+': ':''}${esc(r.label)}</h3></header><p>${esc(r.targetName)}: ${esc(timing[r.event]??r.event)}</p>${r.enteredSquares?`<p>Entered ${r.enteredSquares} marked hazardous square${r.enteredSquares===1?'':'s'}.</p>`:''}<section class="card-buttons">${controls}<div data-visibility="gm">${missing?'<label>Set missing source DC <input type="number" min="1" max="100" data-area-dc><button type="button" data-area-set-dc>Set DC</button></label>':''}</div><div data-visibility="${visibility}">${outcome}${p.note?`<p>${esc(p.note)}</p>`:''}${effect?`<p>${esc(effect)}</p>`:''}${hasDamage?`<p>${p.healing?'Roll healing with the native controls.':p.independentDamage?'Use the amount required by this ability.':(p.basic?'Basic save':'Damage')+': '+(factor(r)===0.5?'half':factor(r)===2?'double':'full')+' damage.'}</p>${(p.damageChoices??[{label:p.conditionalDamageLabel??(p.healing?'Roll healing':p.independentDamage?'Roll damage if applicable':'Roll damage')}]).map((c,i)=>`<button type="button" data-area-damage="${i}" ${r.damageRolled?'disabled':''}>${r.damageRolled?(p.healing?'Healing rolled':'Damage rolled'):esc(c.label)}</button>`).join('')}`:''}</div></section></div>`;
 }
 
-async function update(m,r){await m.update({content:renderCard(r),[`flags.${ID}.request`]:r});}
+async function update(m,r){await m.update({content:renderCard(r),[`flags.${ID}.request`]:r});indexRequestChange(m);}
 export async function trigger(s,target,event,key,window={}){
  const request=await triggerOne(s,target,event,key,window),p=profiles[s.profile];
  for(const companion of p?.fieldCompanions??[]){const id=s.profile+'-'+companion.id,child=profiles[id],state=s.kind==='region'?binding(fromUuidSync(s.instance))?.fieldState:null;if(!child.events.includes(event)||child.requireFieldState&&child.requireFieldState!==state)continue;await triggerOne({...s,profile:id,name:s.name+': '+child.modeLabel,options:[...s.options,...(child.basic||child.directDamage?['damaging-effect']:[])]},target,event,key,window);}
@@ -54,18 +78,21 @@ async function triggerOne(s,target,event,key,window={}){
  if(p.sourceOnly&&s.actorUUID!==target.actor.uuid)return null;
  if(p.affects){const source=sourceActor(s),self=source?.uuid===target.actor.uuid;if(p.affects==='allies'&&!(self?p.includeSelf:source?.isAllyOf(target.actor)))return null;if(p.affects==='enemies'&&(self||!source?.isEnemyOf(target.actor)))return null;}
  if(p.suppressWhenUnconscious&&fromUuidSync(s.actorUUID)?.hasCondition('unconscious'))return null;
- if(event==='enter'&&p.entryOwnTurn&&(!encounterInScene(game.combat,target.parent)||!isTurnOf(target,game.combat.combatant)))return null;
+ const encounter=encounterInScene(window.encounter,target.parent)?window.encounter:startedEncounter(target.parent);
+ if(event==='enter'&&p.entryOwnTurn&&!isTurnOf(target,encounter?.combatant))return null;
  if(p.minSize!==undefined&&['tiny','sm','med','lg','huge','grg'].indexOf(target.actor.size)<p.minSize)return null;
  if(p.maxSize!==undefined&&['tiny','sm','med','lg','huge','grg'].indexOf(target.actor.size)>p.maxSize)return null;
- const encounter=window.encounter??game.combat,epoch=encounterInScene(encounter,target.parent)?encounter.id+':'+encounter.round+(p.frequency==='turn'?':'+(window.combatant?.id??encounter.combatant?.id):''):'time:'+Math.floor(now()/6);
+ const epoch=encounter?encounter.id+':'+encounter.round+(p.frequency==='turn'?':'+((encounter===window.encounter?window.combatant?.id:null)??encounter.combatant?.id):''):'time:'+Math.floor(now()/6);
  if(p.frequency==='combat'&&!encounter?.started)return null;
  const windowKey=p.frequency==='cast'?'initial':p.frequency==='combat'?encounter.id:epoch,eventKey=p.frequency?(s.castKey??s.instance)+'|'+s.profile+'|'+identity(target)+'|'+p.frequency+'|'+windowKey:s.instance+'|'+s.profile+'|'+(target.flags.pf2e?.troop?identity(target):target.uuid)+'|'+event+'|'+key;
  if(p.frequency&&castRegions(s).some(r=>{const v=r.getFlag(ID,'ledger')?.[actorKey(identity(target),s)];return v?.window===windowKey&&(v.outcome||game.messages.has(v.requestId));}))return null;
- if(game.messages.some(m=>req(m)?.key===eventKey))return null;
+ if(hasAreaRequest(eventKey))return null;
  const stored={...s};if(p.noDamageAdjustment)stored.damageAdjustment=0;if(p.extraTraits)stored.traits=[...new Set([...s.traits,...p.extraTraits])];const eventChoices=profiles[s.profile].eventOverrides?.[event]?.checkChoices;if(eventChoices)stored.checkChoices=eventChoices.map(c=>({...c,dc:c.dc??s.dc}));delete stored.aura;delete stored.snapshot;if(Number.isInteger(p.adjacentDamageIndex)&&s.kind==='region'&&!target.testInsideRegion(fromUuidSync(s.instance)))stored.damage=nativeDamage(await sourceItem(s),p.adjacentDamageIndex);if(p.attack){stored.casterDC=s.dc;stored.dc=target.actor.getStatistic(p.attack)?.dc.value;}
  if(p.flatGateDC)stored.checkChoices=[{save:'flat',dc:p.flatGateDC}];
  const r={...(initialOutcome?{initialOutcome}:{}),...(window.enteredSquares?{enteredSquares:window.enteredSquares}:{}),...(p.flatGateDC?{gate:'flat',gateSpellDC:s.dc}:{}),key:eventKey,source:stored,save:p.flatGateDC?'flat':p.attack?'spell-attack':p.save,targetUUID:target.uuid,actorUUID:target.actor.uuid,identity:identity(target),targetName:target.name,label:sourceLabel(s),event,status:p.reminder||p.gmDecision?'notice':p.directDamage?'ready':'pending',createdAt:now()};
  const message=await ChatMessage.create({speaker:ChatMessage.getSpeaker({actor:target.actor,token:target}),whisper:target.hidden||p.gmOnly||p.gmDecision?ChatMessage.getWhisperRecipients('GM').map(u=>u.id):[],content:renderCard(r),flags:{[ID]:{request:r}}});
+ if(!message)return null;
+ indexRequestChange(message);
  if(p.frequency)for(const region of castRegions(s)){const ledger={...(region.getFlag(ID,'ledger')??{}),[actorKey(identity(target),s)]:{window:windowKey,requestId:message.id,...(p.reminder?{outcome:'notice'}:{})}};await region.setFlag(ID,'ledger',ledger);}
  return message;
 }
@@ -107,12 +134,17 @@ export async function reconcile(){
   const bound=await bindRegion(r);
   if(!s){const initial=placementTargets.get(r.uuid);placementTargets.delete(r.uuid);if(bound&&profiles[bound.profile].events.includes('cast'))for(const token of canvas.scene.tokens)if(initial&&!profiles[bound.profile].shellThickness?initial.includes(token.uuid):token.testInsideRegion(r))await trigger(bound,token,'cast','placement');}
  }
- for(const m of game.messages){const r=req(m);if(r?.status==='rolling'&&r.claimUntil<Date.now()){r.status='pending';r.claimedBy=null;if(behavior(r.source.profile,r.event).attack)r.attackAttempted=false;await update(m,r);}}
+ await recoverRollingRequests();
+}
+export async function recoverRollingRequests(){
+ indexRequests();
+ for(const id of [...rollingRequests]){const m=game.messages.get(id),saved=req(m);if(saved?.status==='rolling'&&saved.claimUntil<Date.now()){const r={...saved,status:'pending',claimedBy:null};if(behavior(r.source.profile,r.event).attack)r.attackAttempted=false;await update(m,r);}}
 }
 export async function ended(region){
  if(!gm())return;
  placementTargets.delete(region.uuid);
- for(const m of game.messages){const r=req(m);if(r?.source.instance===region.uuid&&['pending','rolling','ready'].includes(r.status)){r.status='cancelled';await update(m,r);}}
+ indexRequests();
+ for(const id of [...indexedRequests.keys()]){const m=game.messages.get(id),r=req(m);if(r?.source.instance===region.uuid&&['pending','rolling','ready'].includes(r.status))await update(m,{...r,status:'cancelled'});}
 }
 function owner(r,user){const p=behavior(r.source.profile,r.event),a=p.attack?sourceActor(r.source):fromUuidSync(r.actorUUID);return user?.active&&(user.isGM||!p.gmOnly&&a?.testUserPermission(user,'OWNER'));}
 async function claim(data){
@@ -246,7 +278,7 @@ export async function setDC(messageId,value){
  const item=await fromUuid(r.source.itemUUID);if(item)await item.setFlag(ID,'dc',dc);r.source.dc=dc;if(r.source.checkChoices)r.source.checkChoices=r.source.checkChoices.map(c=>({...c,dc:Number.isFinite(c.dc)&&c.dc>0?c.dc:dc}));await update(m,r);
 }
 
-const sweepWindow=()=>game.combat?.started?game.combat.id+':'+game.combat.round:'time:'+Math.floor(now()/6);
+const sweepWindow=encounter=>encounter?encounter.id+':'+encounter.round:'time:'+Math.floor(now()/6);
 function sweepFractions(before,after,points=[],walls=[]){
  const dx=after.x-before.x,dy=after.y-before.y,size=canvas.grid.size,center=canvas.grid.getCenterPoint({i:0,j:0}),fractions=new Set([0,1]),cross=(ax,ay,bx,by)=>ax*by-ay*bx,add=t=>{if(Number.isFinite(t)&&t>=0&&t<=1)fractions.add(t);};
  // PF2e covered squares change at cell-center lines, including isolated corner contacts.
@@ -258,7 +290,7 @@ function sweepFractions(before,after,points=[],walls=[]){
 export async function recordRegionSweep(region,previousShapes){
  if(!gm()||!enabled()||region.hidden||region.parent!==canvas.scene)return;
  const s=binding(region),p=profiles[s?.profile],before=previousShapes?.[0],after=region.shapes[0];if(!p?.sweptArea||!before||!after||previousShapes.length!==1||region.shapes.length!==1||before.type!=='circle'||after.type!=='circle'||before.x===after.x&&before.y===after.y)return;
- const prior=region.getFlag(ID,'sweep'),window=sweepWindow(),affected=new Set(prior?.window===window?prior.targets:[]),size=canvas.grid.size,radius=Math.max(before.radius,after.radius)+size,bounds=new PIXI.Rectangle(Math.min(before.x,after.x)-radius,Math.min(before.y,after.y)-radius,Math.abs(after.x-before.x)+2*radius,Math.abs(after.y-before.y)+2*radius),targets=region.parent.tokens.filter(t=>t.actor?.isOfType('creature')&&bounds.intersects(t.mechanicalBounds));
+ const prior=region.getFlag(ID,'sweep'),window=sweepWindow(startedEncounter(region.parent)),affected=new Set(prior?.window===window?prior.targets:[]),size=canvas.grid.size,radius=Math.max(before.radius,after.radius)+size,bounds=new PIXI.Rectangle(Math.min(before.x,after.x)-radius,Math.min(before.y,after.y)-radius,Math.abs(after.x-before.x)+2*radius,Math.abs(after.y-before.y)+2*radius),targets=region.parent.tokens.filter(t=>t.actor?.isOfType('creature')&&bounds.intersects(t.mechanicalBounds));
  const sample=(fractions,tokens)=>{for(const t of fractions){const shape={...before,x:before.x+(after.x-before.x)*t,y:before.y+(after.y-before.y)*t},document=region.clone({shapes:[shape]},{keepId:true,parent:region.parent});for(const token of tokens)if(!affected.has(token.uuid)&&token.testInsideRegion(document))affected.add(token.uuid);if(tokens.every(token=>affected.has(token.uuid)))break;}};
  sample(sweepFractions(before,after),targets);
  const walls=[...region.parent.walls].map(w=>w.c).filter(c=>Array.isArray(c)&&c.length===4&&Math.max(c[0],c[2])>=bounds.left&&Math.min(c[0],c[2])<=bounds.right&&Math.max(c[1],c[3])>=bounds.top&&Math.min(c[1],c[3])<=bounds.bottom);
@@ -271,12 +303,13 @@ export async function pulse(messageId,userId=game.user.id,choices=null,targetUUI
  if(!p?.events.includes('sustain')||!item?.actor||!user||!user.isGM&&!item.actor.testUserPermission(user,'OWNER'))return;
  const regions=canvas.scene.regions.filter(region=>binding(region)?.messageId===messageId&&!region.hidden&&region.behaviors.some(b=>b.type===ID+'.trigger'&&!b.disabled));
  if(!regions.length){if(game.user.id===userId)ui.notifications.info('Place an active area for this spell before prompting its effect.');return;}
- const eligible=regions.filter(region=>{const s=binding(region),sameCombat=s.castCombat&&s.castCombat.id===game.combat?.id;return !(p.sustainAfterCastRound&&sameCombat&&game.combat.round<=s.castCombat.round&&!(p.initialSweep&&s.initialSweepPending)&&!(p.initialPulse&&s.initialPulsePending))&&!(p.sustainAfterCastTurn&&sameCombat&&game.combat.round===s.castCombat.round&&game.combat.turn===s.castCombat.turn)&&(!p.sweptArea||region.getFlag(ID,'sweep')?.window===sweepWindow());});
+ const encounter=startedEncounter(canvas.scene);
+ const eligible=regions.filter(region=>{const s=binding(region),sameCombat=s.castCombat&&s.castCombat.id===encounter?.id;return !(p.sustainAfterCastRound&&sameCombat&&encounter.round<=s.castCombat.round&&!(p.initialSweep&&s.initialSweepPending)&&!(p.initialPulse&&s.initialPulsePending))&&!(p.sustainAfterCastTurn&&sameCombat&&encounter.round===s.castCombat.round&&encounter.turn===s.castCombat.turn)&&(!p.sweptArea||region.getFlag(ID,'sweep')?.window===sweepWindow(encounter));});
  if(!eligible.length){if(game.user.id===userId)ui.notifications.info(p.sweptArea?'Move the area before prompting its sweep.':'This effect starts on a subsequent round.');return;}
  if(!gm()){emit({op:'pulse',messageId,choices,targetUUIDs});return;}
  if(p.pulseChoices)return chosenPulse(p,eligible,user,choices,targetUUIDs);
  if(p.sustainOnlyExtend){for(const region of eligible){const source=binding(region);if(!sourceLive(source)||!active(source))continue;const combat=startedEncounter(region.parent),owner=combat.turns.findIndex(c=>c.actor?.uuid===source.actorUUID);if(owner<0){ui.notifications.warn('Put the source in initiative before extending its turn deadline.');continue;}await region.setFlag(ID,'binding.sourceEndExpiry',{combatId:combat.id,round:combat.round+(owner<=combat.turn?1:0)});}return;}
- if(p.sustainAugment){const window=sweepWindow()+':'+(game.combat?.combatant?.id??'');for(const region of eligible){if(region.getFlag(ID,'augmentWindow')===window)continue;const s=binding(region),die=Math.min(12,(s.entropyDie??6)+2),scale=region.parent.grid.size/region.parent.grid.distance;await region.update({shapes:region.shapes.map(shape=>shape.type==='circle'?{...shape,radius:Math.min(40*scale,shape.radius+10*scale)}:shape),[`flags.${ID}.binding.entropyDie`]:die,[`flags.${ID}.augmentWindow`]:window});}return;}
+ if(p.sustainAugment){const window=sweepWindow(encounter)+':'+(encounter?.combatant?.id??'');for(const region of eligible){if(region.getFlag(ID,'augmentWindow')===window)continue;const s=binding(region),die=Math.min(12,(s.entropyDie??6)+2),scale=region.parent.grid.size/region.parent.grid.distance;await region.update({shapes:region.shapes.map(shape=>shape.type==='circle'?{...shape,radius:Math.min(40*scale,shape.radius+10*scale)}:shape),[`flags.${ID}.binding.entropyDie`]:die,[`flags.${ID}.augmentWindow`]:window});}return;}
  const key=foundry.utils.randomID();
  for(const region of eligible){const s=binding(region),sweep=p.sweptArea?region.getFlag(ID,'sweep'):null;for(const token of canvas.scene.tokens)if(sweep?sweep.targets.includes(token.uuid):token.testInsideRegion(region))await trigger(s,token,'sustain',key);if(sweep)await region.unsetFlag(ID,'sweep');if(s.initialSweepPending)await region.setFlag(ID,'binding.initialSweepPending',false);}
 }
@@ -297,7 +330,7 @@ function pulseContains(region,token,p){
 }
 async function chosenPulse(p,regions,user,choices,targetUUIDs){
  if(!Array.isArray(choices)||!choices.length||choices.length>(p.pulseLimit??1)||new Set(choices).size!==choices.length||choices.some(id=>!p.pulseChoices.some(c=>c.id===id))){ui.notifications.warn('Choose the permitted number of different spell effects.');return;}
- const leader=regions[0],source=binding(leader),prior=leader.getFlag(ID,'pulseChoiceState'),combat=game.combat,window=encounterInScene(combat,canvas.scene)?combat.id+':'+combat.round:'time:'+Math.floor(now()/6),initial=source.initialPulsePending&&(!source.castCombat||source.castCombat.id===combat?.id&&source.castCombat.round===combat.round);
+ const leader=regions[0],source=binding(leader),prior=leader.getFlag(ID,'pulseChoiceState'),combat=startedEncounter(leader.parent),window=sweepWindow(combat),initial=source.initialPulsePending&&(!source.castCombat||source.castCombat.id===combat?.id&&source.castCombat.round===combat.round);
  if(p.pulseFrequency==='round'&&prior?.window===window&&!initial){ui.notifications.warn('This casting already used its first Sustain effect this round.');return;}
  if(p.noConsecutiveChoice&&choices.some(id=>prior?.choices?.includes(id))){ui.notifications.warn('Choose a different effect from the previous display.');return;}
  const selected=[...new Set(targetUUIDs??[])].map(uuid=>canvas.scene.tokens.find(t=>t.uuid===uuid)).filter(Boolean),plans=[];

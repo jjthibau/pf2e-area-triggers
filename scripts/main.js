@@ -1,7 +1,7 @@
 import {setActive,clearGeometry,repairAuraRadii,restoreAuraRadii,invalidateLocalAuraCaches,setEnvironmentTags,renderEnvironmentConfig} from './geometry.js';
 import {ID,profiles} from './profiles.js';
 import {binding,gm,setSourceLive,enabled,syncFollowingRegions,linkArea} from './sources.js';
-import {enqueue,idle,turn,round,enter,reconcile,ended,listenSocket,chatListeners,rollSave,damage,captureAuraMove,finishAuraMove,activatedAura,setDC,pulse,recordRegionSweep,rememberPlacement,trigger,approve,activateHaunt,scheduleArea,advanceScheduled,spellCastAreas,forgetMovement} from './engine.js';
+import {enqueue,idle,turn,round,enter,reconcile,ended,listenSocket,chatListeners,rollSave,damage,captureAuraMove,finishAuraMove,activatedAura,setDC,pulse,recordRegionSweep,rememberPlacement,trigger,approve,activateHaunt,scheduleArea,advanceScheduled,spellCastAreas,forgetMovement,indexRequests,indexRequestChange,indexRequestDeletion} from './engine.js';
 Hooks.once('init',()=>{
  Hooks.on('renderChatMessageHTML',chatListeners);Hooks.on('renderRegionConfig',renderEnvironmentConfig);
  game.settings.register(ID,'enabled',{name:'Enable area trigger prompts',hint:'Area prompts require a started encounter. Hazards must be in initiative or explicitly made live by the GM.',scope:'world',config:true,type:Boolean,default:true,onChange:value=>{if(!value)restoreAuraRadii();else for(const t of canvas.scene?.tokens??[])repairAuraRadii(t);if(gm())enqueue(()=>enabled()?reconcile():clearGeometry());}});
@@ -20,7 +20,10 @@ Hooks.once('ready',()=>{
  game.modules.get(ID).api={scheduleArea:(...args)=>enqueue(()=>scheduleArea(...args)),activateHaunt:(...args)=>enqueue(()=>activateHaunt(...args)),linkArea,setEnvironmentTags,approve:(...args)=>enqueue(()=>approve(...args)),pulse:(...args)=>enqueue(()=>pulse(...args)),setActive,idle,reconcile:()=>enqueue(reconcile),rollSave,damage,setDC,setSourceLive,turn:(c,e,p)=>enqueue(()=>turn(c,e,p)),round:e=>enqueue(()=>round(e))};listenSocket();
  Hooks.on('preUpdateCombat',(e,changes,options)=>{if('turn'in changes||'round'in changes)options[ID]={...(options[ID]??{}),clockBefore:{round:e.round,turn:e.turn,ids:e.turns.map(c=>c.id)}};});
  Hooks.on('updateCombat',(e,changes,options)=>{if(!gm())return;if(changes.round>0)enqueue(()=>round(e));if(options[ID]?.clockBefore)enqueue(()=>advanceScheduled(e,options[ID].clockBefore));});
- Hooks.on('createChatMessage',message=>{if(gm())enqueue(()=>spellCastAreas(message));});
+ indexRequests();
+ Hooks.on('createChatMessage',message=>{indexRequestChange(message);if(gm())enqueue(()=>spellCastAreas(message));});
+ Hooks.on('updateChatMessage',indexRequestChange);
+ Hooks.on('deleteChatMessage',indexRequestDeletion);
  Hooks.on('pf2e.startTurn',(c,e)=>enqueue(()=>turn(c,e,'start')));Hooks.on('pf2e.endTurn',(c,e)=>enqueue(()=>turn(c,e,'end')));
  Hooks.on('createItem',item=>{if(gm())enqueue(async()=>{await reconcile();await activatedAura(item);});});
  Hooks.on('updateItem',(item,changes)=>{if(gm())enqueue(async()=>{await reconcile();if(changes.flags?.[ID]?.active?.enabled)await activatedAura(item);});});

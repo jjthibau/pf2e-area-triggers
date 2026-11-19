@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {profiles,profileFor} from '../scripts/profiles.js';
 import {catalogData} from '../scripts/catalog.js';
 import {syncFollowingRegions,encounterSceneId,encounterInScene,startedEncounter} from '../scripts/sources.js';
+import {hasAreaRequest,indexRequestChange,indexRequestDeletion,recoverRollingRequests} from '../scripts/engine.js';
 test('Freezing Rain retains its ten-minute maximum',()=>assert.equal(profiles['freezing-rain'].duration,600));
 test('Catalog provenance and registered triggers are consistent',()=>{
  assert.equal(new Set(Object.values(catalogData).map(p=>p.canonical)).size,Object.keys(catalogData).length);
@@ -24,6 +25,44 @@ test('unlinked encounter resolves the single authoritative combatant scene',()=>
  const scene={id:'scene-a'},encounter={active:true,started:true,scene:null,combatants:[{tokenId:'a',sceneId:'scene-a'},{tokenId:'b',sceneId:'scene-a'},{actorId:'actor-only'}]};
  assert.equal(encounterSceneId(encounter),'scene-a');assert.equal(encounterInScene(encounter,scene),true);
  globalThis.game={combats:[encounter]};assert.equal(startedEncounter(scene),encounter);
+});
+test('started encounter follows linked or inferred scene despite a different viewed encounter',()=>{
+ const scene={id:'proper'};
+ const viewed={id:'tracker-only',scene:{id:'elsewhere'},active:true,started:true};
+ for(const encounter of [
+  {id:'linked',scene,active:true,started:true},
+  {id:'unlinked',scene:null,combatants:[{tokenId:'target',sceneId:scene.id}],active:true,started:true},
+ ]){
+  globalThis.game={combat:viewed,combats:[viewed,encounter]};
+  assert.equal(startedEncounter(scene),encounter);
+ }
+});
+test('rolling recovery and duplicate checks have identical steady-state history reads with 100 or 10,000 unrelated messages',async()=>{
+ for(const size of [100,10000]){
+  let unrelatedReads=0,lookups=0;
+  const messages=Array.from({length:size},(_,id)=>({id:`other-${id}`,getFlag(){unrelatedReads++;}}));
+  let request={key:'one turn',source:{profile:'luring-wail',dc:20},status:'rolling',event:'enter',claimUntil:0,save:'will'};
+  const card={id:'request',getFlag:()=>request,async update(changes){request=changes['flags.pf2e-area-triggers.request'];}};
+  messages.push(card);
+  messages.get=id=>{lookups++;assert.equal(id,card.id);return card;};
+  globalThis.game={messages,settings:{get:()=>false},i18n:{localize:value=>value}};
+  globalThis.CONFIG={PF2E:{saves:{will:'Will'}}};
+  assert.equal(hasAreaRequest('one turn'),true);
+  assert.equal(unrelatedReads,size);
+  await recoverRollingRequests();
+  assert.equal(request.status,'pending');
+  assert.equal(lookups,1);
+  for(let n=0;n<25;n++){
+   await recoverRollingRequests();
+   assert.equal(hasAreaRequest('one turn'),true);
+  }
+  assert.equal(lookups,1);
+  assert.equal(unrelatedReads,size);
+  request={...request,key:'renamed'};indexRequestChange(card);
+  assert.equal(hasAreaRequest('one turn'),false);
+  assert.equal(hasAreaRequest('renamed'),true);
+  indexRequestDeletion(card);assert.equal(hasAreaRequest('renamed'),false);
+ }
 });
 test('explicit scene link wins over combatant inference, including a missing linked document',()=>{
  const combatants=[{tokenId:'a',sceneId:'scene-a'}];assert.equal(encounterSceneId({scene:{id:'scene-b'},combatants}),'scene-b');assert.equal(encounterSceneId({scene:null,_source:{scene:'deleted-scene'},combatants}),'deleted-scene');

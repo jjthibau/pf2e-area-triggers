@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 - 2026-11-18
+
+- Use the encounter on the affected scene, including valid unlinked encounters. Index area request cards for duplicate checks and claim recovery.
+
 ## 0.1.1
 
 - Reuse the fixed legacy spell-source lookup instead of rebuilding it during every matching item lookup.
